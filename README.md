@@ -50,8 +50,11 @@ four-meme-complete/
 ├── SKILL.md                  # OpenClaw 技能文档
 ├── scripts/
 │   ├── create-token-api.ts   # 完整 API 流程
-│   ├── create-token-chain.ts # 区块链执行
+│   ├── create-token-chain.ts # 区块链执行（仅创建）
+│   ├── buy-token.ts          # 买入代币
 │   └── sell-token.ts         # 卖出代币
+├── guides/
+│   └── BUYING.md             # 买入代币指南
 └── references/
     └── api-details.md        # API 详细文档
 ```
@@ -102,6 +105,32 @@ npx tsx scripts/create-token-chain.ts \
   "0x7b226e616d65223a224d..." \
   "0x8f3d7c9a2b1e4f5..."
 ```
+
+### 买入代币（创建后）
+
+**重要**：`create-token-chain.ts` 只创建代币，**不会自动买入**！
+
+创建后，使用以下方法买入：
+
+**方法一：使用脚本**
+```bash
+npx tsx scripts/buy-token.ts <代币地址> <BNB数量>
+
+# 示例：买入 1 BNB 的代币
+npx tsx scripts/buy-token.ts 0x1234567890abcdef... 1
+```
+
+**方法二：FOUR.MEME 前端（推荐）**
+1. 打开 https://four.meme
+2. 连接钱包
+3. 搜索你的代币
+4. 点击 "Buy"
+
+**如何获取代币地址？**
+- 查看创建交易的 receipt（TokenCreated 事件）
+- 或在 BSCScan 搜索你的钱包地址，查看最新交易
+
+更多买入指南：[guides/BUYING.md](guides/BUYING.md)
 
 ### 卖出代币
 
