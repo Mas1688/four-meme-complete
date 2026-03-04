@@ -19,7 +19,20 @@ npm install
 export PRIVATE_KEY="0x你的私钥"
 ```
 
-### 3. 创建代币
+### 3. 创建代币 + 自动买入（推荐）
+
+**一体化脚本 - 创建并自动买入：**
+```bash
+npx tsx scripts/create-and-buy.ts \
+  /path/to/logo.jpg \
+  "TOKEN NAME" \
+  "SYMBOL" \
+  "Token description" \
+  "AI" \
+  1  # 买入 1 BNB
+```
+
+### 或者分步操作
 
 **第一步：获取服务器签名**
 ```bash
@@ -49,6 +62,7 @@ four-meme-complete/
 ├── README.md                 # 完整文档
 ├── SKILL.md                  # OpenClaw 技能文档
 ├── scripts/
+│   ├── create-and-buy.ts     # ⭐ 创建+买入一体化（推荐）
 │   ├── create-token-api.ts   # 完整 API 流程
 │   ├── create-token-chain.ts # 区块链执行（仅创建）
 │   ├── buy-token.ts          # 买入代币
@@ -79,7 +93,35 @@ four-meme-complete/
 
 ## 📖 详细使用说明
 
-### 创建代币完整流程
+### 方法 1：创建 + 买入一体化（推荐）
+
+**最简单的方法！** 使用 `create-and-buy.ts` 脚本，一步完成创建和买入：
+
+```bash
+# 1. 设置环境变量
+export PRIVATE_KEY="0x1234567890abcdef..."
+
+# 2. 执行一体化脚本
+npx tsx scripts/create-and-buy.ts \
+  ./my-logo.jpg \
+  "My AI Token" \
+  "MAI" \
+  "An AI-powered token on BSC" \
+  "AI" \
+  1  # 买入 1 BNB（可调整）
+```
+
+**脚本会自动：**
+1. 获取 nonce
+2. 登录获取 accessToken
+3. 上传图片
+4. 获取服务器签名
+5. 创建代币（区块链上）
+6. 自动买入（指定数量的 BNB）
+
+### 方法 2：分步操作
+
+如果需要分开操作：
 
 ```bash
 # 1. 进入目录
