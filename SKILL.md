@@ -38,9 +38,18 @@ npx tsx scripts/create-token-api.ts \
   "AI"
 ```
 
-**第二步：区块链执行**
+**第二步：创建代币（仅创建，不买入）**
 ```bash
 npx tsx scripts/create-token-chain.ts <createArg> <signature>
+```
+
+**第三步：买入代币（创建后）**
+```bash
+# 方法1：使用脚本
+npx tsx scripts/buy-token.ts <代币地址> <BNB数量>
+
+# 方法2：FOUR.MEME 前端（推荐）
+# 打开 https://four.meme，搜索代币，点击 Buy
 ```
 
 ## 关键特性
@@ -55,10 +64,12 @@ npx tsx scripts/create-token-chain.ts <createArg> <signature>
 | 文件 | 用途 |
 |------|------|
 | `scripts/create-token-api.ts` | 完整 API 认证流程 |
-| `scripts/create-token-chain.ts` | 区块链交易执行 |
-| `scripts/sell-token.ts` | 代币卖出 |
+| `scripts/create-token-chain.ts` | 区块链执行（仅创建） |
+| `scripts/buy-token.ts` | 买入代币 |
+| `scripts/sell-token.ts` | 卖出代币 |
 | `package.json` | 所有依赖已声明 |
 | `tsconfig.json` | TypeScript 配置 |
+| `guides/BUYING.md` | 买入代币指南 |
 
 ## 关键注意事项
 
