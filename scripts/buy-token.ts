@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Four.meme - Simple Buy Token
- * Buy tokens after creation
+ * Four.meme - Buy Token (FIXED VERSION)
+ * Correctly buys tokens through TokenManager
  * 
  * Usage:
  *   npx tsx buy-token.ts <tokenAddress> <bnbAmount>
@@ -16,12 +16,19 @@ import { createPublicClient, createWalletClient, http, parseAbi } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { bsc } from 'viem/chains';
 
-const FACTORY = '0x5c952063c7fc8610ffdb798152d69f0b9550762b' as const;
-const WBNB = '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c' as const;
+const HELPER_ADDRESS = '0xF251F83e40a78868FcfA3FA4599Dad6494E46034' as const;
+const ZERO = '0x0000000000000000000000000000000000000000' as const;
 
-// Minimal ABI for buy function
-const ABI = parseAbi([
-  'function buyToken(address token, uint256 minAmount) payable external',
+// Helper ABI for getting token info
+const HELPER_ABI = parseAbi([
+  'function getTokenInfo(address token) view returns (uint256 version, address tokenManager, address quote, uint256 lastPrice, uint256 tradingFeeRate, uint256 minTradingFee, uint256 launchTime, uint256 offers, uint256 maxOffers, uint256 funds, uint256 maxFunds, bool liquidityAdded)',
+  'function tryBuy(address token, uint256 amount, uint256 funds) view returns (address tokenManager, address quote, uint256 estimatedAmount, uint256 estimatedCost, uint256 estimatedFee, uint256 amountMsgValue, uint256 amountApproval, uint256 amountFunds)',
+]);
+
+// TokenManager ABI
+const TOKEN_MANAGER_ABI = parseAbi([
+  'function buyToken(address token, uint256 amount, uint256 maxFunds) payable external',
+  'function buyTokenAMAP(address token, uint256 funds, uint256 minAmount) payable external',
 ]);
 
 async function main() {
@@ -46,30 +53,84 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`🔑 Wallet: ${account.address}`);
-  console.log(`🎯 Token: ${tokenAddress}`);
-  console.log(`💰 Amount: ${bnbAmount} BNB`);
+  console.log('🚀 Starting Buy Process');
+  console.log('=======================');
+  console.log(`Wallet: ${account.address}`);
+  console.log(`Token: ${tokenAddress}`);
+  console.log(`Amount: ${bnbAmount} BNB`);
   console.log('');
 
   const rpcUrl = process.env.BSC_RPC_URL || 'https://bsc-dataseed.binance.org';
-  const client = createWalletClient({
+  
+  const publicClient = createPublicClient({
+    chain: bsc,
+    transport: http(rpcUrl),
+  });
+  
+  const walletClient = createWalletClient({
     account,
     chain: bsc,
     transport: http(rpcUrl),
   });
 
   try {
-    console.log('⏳ Buying tokens...');
+    // STEP 1: Get token info (including tokenManager address)
+    console.log('Step 1/3: Getting token info...');
+    const tokenInfo = await publicClient.readContract({
+      address: HELPER_ADDRESS,
+      abi: HELPER_ABI,
+      functionName: 'getTokenInfo',
+      args: [tokenAddress],
+    });
     
-    const valueWei = BigInt(Math.floor(bnbAmount * 1e18));
-    const minTokens = 0n; // Accept any amount (can be adjusted)
+    const version = tokenInfo[0];
+    const tokenManager = tokenInfo[1];
+    const quote = tokenInfo[2];
+    
+    console.log(`✅ Token info obtained`);
+    console.log(`   Version: ${version}`);
+    console.log(`   TokenManager: ${tokenManager}`);
+    console.log(`   Quote Token: ${quote}`);
+    console.log('');
 
-    const hash = await client.writeContract({
-      address: FACTORY,
-      abi,
-      functionName: 'buyToken',
-      args: [tokenAddress, minTokens],
-      value: valueWei,
+    if (Number(version) !== 2) {
+      console.warn(`⚠️ Warning: Token version is ${version}, expected 2`);
+    }
+
+    // STEP 2: Try buy (get estimation)
+    console.log('Step 2/3: Estimating buy...');
+    const fundsWei = BigInt(Math.floor(bnbAmount * 1e18));
+    
+    const tryBuyResult = await publicClient.readContract({
+      address: HELPER_ADDRESS,
+      abi: HELPER_ABI,
+      functionName: 'tryBuy',
+      args: [tokenAddress, 0n, fundsWei], // amount=0 means buy with fixed funds
+    });
+    
+    const estimatedAmount = tryBuyResult[2];
+    const estimatedCost = tryBuyResult[3];
+    const estimatedFee = tryBuyResult[4];
+    const amountMsgValue = tryBuyResult[5];
+    
+    console.log(`✅ Buy estimation:`);
+    console.log(`   Estimated tokens: ${estimatedAmount.toString()}`);
+    console.log(`   Cost: ${estimatedCost.toString()}`);
+    console.log(`   Fee: ${estimatedFee.toString()}`);
+    console.log(`   MsgValue: ${amountMsgValue.toString()}`);
+    console.log('');
+
+    // STEP 3: Execute buy
+    console.log('Step 3/3: Executing buy...');
+    console.log('⏳ Submitting transaction...');
+    
+    // Use buyTokenAMAP for buying with fixed funds
+    const hash = await walletClient.writeContract({
+      address: tokenManager,
+      abi: TOKEN_MANAGER_ABI,
+      functionName: 'buyTokenAMAP',
+      args: [tokenAddress, fundsWei, 0n], // minAmount=0, accept any
+      value: amountMsgValue,
       gas: 500000n,
     });
 
@@ -77,27 +138,44 @@ async function main() {
     console.log(`🔗 Tx Hash: ${hash}`);
     console.log(`🌐 View: https://bscscan.com/tx/${hash}`);
     console.log('');
-    console.log(JSON.stringify({ 
-      success: true,
-      txHash: hash,
-      explorer: `https://bscscan.com/tx/${hash}`
-    }, null, 2));
+    
+    // Wait for confirmation
+    console.log('⏳ Waiting for confirmation...');
+    const receipt = await publicClient.waitForTransactionReceipt({ 
+      hash,
+      timeout: 120_000
+    });
+    
+    if (receipt.status === 'success') {
+      console.log('✅ BUY SUCCESSFUL!');
+      console.log('');
+      console.log(JSON.stringify({ 
+        success: true,
+        txHash: hash,
+        tokenAddress: tokenAddress,
+        explorer: `https://bscscan.com/tx/${hash}`
+      }, null, 2));
+    } else {
+      console.error('❌ Transaction failed on chain');
+      process.exit(1);
+    }
     
   } catch (error: any) {
     console.error('❌ Buy failed!');
     console.error('');
     
-    if (error.message?.includes('revert')) {
-      console.error('💡 Possible reasons:');
-      console.error('   - Token not yet tradeable (wait for creation tx to confirm)');
+    if (error.message?.includes('insufficient funds')) {
+      console.error('💡 Error: Insufficient BNB balance');
+    } else if (error.message?.includes('revert')) {
+      console.error('💡 Error: Contract reverted');
+      console.error('   Possible causes:');
+      console.error('   - Token not yet tradeable');
       console.error('   - Token already graduated (on PancakeSwap)');
-      console.error('   - Insufficient liquidity');
+      console.error('   - Slippage too high');
     } else {
       console.error(`💡 Error: ${error.message}`);
     }
     
-    console.error('');
-    console.error('💡 Alternative: Buy directly on https://four.meme');
     process.exit(1);
   }
 }

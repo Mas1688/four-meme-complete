@@ -21,6 +21,7 @@ import { bsc } from 'viem/chains';
 const API_BASE = 'https://four.meme/meme-api/v1';
 const NETWORK_CODE = 'BSC';
 const FACTORY_BSC = '0x5c952063c7fc8610ffdb798152d69f0b9550762b' as const;
+const HELPER_ADDRESS = '0xF251F83e40a78868FcfA3FA4599Dad6494E46034' as const;
 
 // ABI for createToken
 const FACTORY_ABI = parseAbi([
@@ -28,9 +29,15 @@ const FACTORY_ABI = parseAbi([
   'event TokenCreated(address indexed token, address indexed creator)',
 ]);
 
-// ABI for buyToken (may need to be called on TokenManager, not Factory)
-const BUY_ABI = parseAbi([
-  'function buyToken(address token, uint256 minAmount) payable external',
+// Helper ABI for getting token info and tryBuy
+const HELPER_ABI = parseAbi([
+  'function getTokenInfo(address token) view returns (uint256 version, address tokenManager, address quote, uint256 lastPrice, uint256 tradingFeeRate, uint256 minTradingFee, uint256 launchTime, uint256 offers, uint256 maxOffers, uint256 funds, uint256 maxFunds, bool liquidityAdded)',
+  'function tryBuy(address token, uint256 amount, uint256 funds) view returns (address tokenManager, address quote, uint256 estimatedAmount, uint256 estimatedCost, uint256 estimatedFee, uint256 amountMsgValue, uint256 amountApproval, uint256 amountFunds)',
+]);
+
+// TokenManager ABI for buying
+const TOKEN_MANAGER_ABI = parseAbi([
+  'function buyTokenAMAP(address token, uint256 funds, uint256 minAmount) payable external',
 ]);
 
 function toHex(value: string): string {
@@ -290,7 +297,7 @@ async function main() {
   console.log(`Creation Tx: ${createHash}`);
   console.log('');
 
-  // AUTO BUY - Now buy tokens
+  // AUTO BUY - Now buy tokens through TokenManager
   if (buyAmountBNB > 0 && tokenAddress) {
     console.log('💰 AUTO BUYING TOKENS...');
     console.log('========================');
@@ -299,16 +306,42 @@ async function main() {
     console.log('');
     
     try {
-      const buyValueWei = BigInt(Math.floor(buyAmountBNB * 1e18));
-      const minTokens = 0n; // Accept any amount
+      // Wait a bit for the token to be fully registered
+      console.log('⏳ Waiting 5 seconds for token registration...');
+      await new Promise(resolve => setTimeout(resolve, 5000));
       
+      // Get token info (including tokenManager address)
+      console.log('Getting token info...');
+      const tokenInfo = await publicClient.readContract({
+        address: HELPER_ADDRESS,
+        abi: HELPER_ABI,
+        functionName: 'getTokenInfo',
+        args: [tokenAddress],
+      });
+      
+      const tokenManager = tokenInfo[1];
+      console.log(`✅ TokenManager: ${tokenManager}`);
+      
+      // Get buy estimation
+      const fundsWei = BigInt(Math.floor(buyAmountBNB * 1e18));
+      const tryBuyResult = await publicClient.readContract({
+        address: HELPER_ADDRESS,
+        abi: HELPER_ABI,
+        functionName: 'tryBuy',
+        args: [tokenAddress, 0n, fundsWei],
+      });
+      
+      const amountMsgValue = tryBuyResult[5];
+      console.log(`✅ Buy estimation: ${tryBuyResult[2].toString()} tokens`);
+      
+      // Execute buy through TokenManager
       console.log('⏳ Submitting buy transaction...');
       const buyHash = await walletClient.writeContract({
-        address: FACTORY_BSC,
-        abi: BUY_ABI,
-        functionName: 'buyToken',
-        args: [tokenAddress, minTokens],
-        value: buyValueWei,
+        address: tokenManager,
+        abi: TOKEN_MANAGER_ABI,
+        functionName: 'buyTokenAMAP',
+        args: [tokenAddress, fundsWei, 0n],
+        value: amountMsgValue,
         gas: 500000n,
       });
       
